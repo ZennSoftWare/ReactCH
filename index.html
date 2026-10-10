@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="id" data-theme="dark" class="lk hld">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>REACTCH — React Message Channel WhatsApp</title>
+<meta name="description" content="Kirim emoji reaction ke pesan WhatsApp Channel.">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5f5f5' stroke-width='2' stroke-linecap='round'%3E%3Crect width='24' height='24' rx='6' fill='%230a0a0a' stroke='none'/%3E%3Ccircle cx='12' cy='12' r='6.5'/%3E%3Cpath d='M9.5 13.5c.7.9 1.5 1.3 2.5 1.3s1.8-.4 2.5-1.3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&family=Mrs+Saint+Delafield&display=swap">
+<script>
+/* Tema awal sebelum render agar tidak berkedip. Default: dark. */
+(function () {
+  try {
+    var t = localStorage.getItem('rch_theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    if (t === 'light') document.querySelector('meta[name=theme-color]').setAttribute('content', '#fafafa');
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+<noscript><style>html.lk{overflow:auto}#ig{display:none!important}html.hld header,html.hld main>*,html.hld footer{opacity:1!important;translate:none!important}</style></noscript>
+</head>
+<body>
+
+<!-- Sprite ikon SVG inline -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-react" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.6 13.8c.8 1.1 2 1.8 3.4 1.8s2.6-.7 3.4-1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="9" cy="10" r="1.1" fill="currentColor"/><circle cx="15" cy="10" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></g></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-wa" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5l1.4-4.3A8.6 8.6 0 1 1 8 19.2z"/><path d="M9.2 8.6c-.3.9.1 2.2 1.3 3.5 1.2 1.3 2.6 2 3.6 1.7l.9-.9-1.8-1.1-.8.6c-.7-.3-1.4-1-1.7-1.7l.6-.8-1.1-1.8z"/></g></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></g></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="5" width="12" height="16" rx="2.5"/><path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h4"/></g></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-kbd" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7 14h10"/></g></symbol>
+    <symbol id="i-smile" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.2c.8 1.1 2 1.8 3.5 1.8s2.7-.7 3.5-1.8M9 9.5h.01M15 9.5h.01"/></g></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L3 10.5l7 2.5 2.5 7z"/><path d="M21 3L10 13"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-spin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".22"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5"/></g></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16h.01"/></g></symbol>
+    <symbol id="i-qr" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="3.5" width="6" height="6" rx="1"/><rect x="3.5" y="14.5" width="6" height="6" rx="1"/><path d="M14.5 14.5h2.5v2.5h-2.5zM19 19h1.5M14.5 20.5H17" stroke-linecap="round"/></g></symbol>
+  </defs>
+</svg>
+
+<!-- Intro: loading -> welcome -->
+<div id="ig" role="dialog" aria-modal="true" aria-labelledby="igt" aria-describedby="igd">
+  <div class="igb" id="igb">
+    <div class="igl" id="igl" role="status">
+      <span class="sld" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="igtx">Sedang memuat</span>
+    </div>
+    <div class="igi" id="igi" inert>
+      <h2 id="igt">Halo 👋</h2>
+      <div id="igd">
+        <p>Selamat datang di website react message channel WhatsApp.</p>
+        <p>Sebelum lanjut, jangan lupa follow channel Razeerh ya, agar mendapatkan informasi terbaru dari Razeerh 🤗</p>
+        <p>Oh ya, bagi kalian yang ingin dukung admin lewat donasi, silahkan tekan tombol donasi, seikhlas nya aja ya 😊</p>
+      </div>
+      <p class="sigl">Salam hangat:<span class="sig">— Razeerh</span></p>
+      <div class="iga">
+        <a class="btn" id="visit" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true"><svg class="ico" aria-hidden="true"><use href="#i-wa"/></svg><span>Kunjungi</span></a>
+        <button class="btn" id="donate" type="button"><svg class="ico" aria-hidden="true"><use href="#i-heart"/></svg><span>Donasi</span></button>
+      </div>
+      <div class="igc"><button class="btn solid" id="igClose" type="button">Tutup</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal donasi -->
+<div id="dn" class="dn" role="dialog" aria-modal="true" aria-labelledby="dnt" hidden>
+  <div class="dnb" id="dnb">
+    <button class="igx" id="dnClose" type="button" aria-label="Tutup donasi"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+    <h2 id="dnt" class="vh">Donasi</h2>
+    <div class="qr" id="qr" data-s="check">
+      <img id="qrImg" alt="QRIS donasi Razeerh" width="640" height="640" decoding="async">
+      <div class="qrph" id="qrPh">
+        <svg class="ico lg" aria-hidden="true"><use href="#i-qr"/></svg>
+        <b>QRIS belum tersedia</b>
+        <span>Admin belum menaruh berkas assets/qris.png.</span>
+      </div>
+    </div>
+    <p class="dnx">Seikhlas nya aja ya, Dukungan kalian sangatlah berarti untuk bagi saya 🤗</p>
+  </div>
+</div>
+
+<div class="ts" id="ts" aria-live="polite" aria-atomic="false"></div>
+
+<header>
+  <div class="w hb">
+    <a class="logo" href="#top" aria-label="REACTCH"><span class="lg-ic"><svg class="ico" aria-hidden="true"><use href="#i-react"/></svg></span><span class="d">REACTCH</span></a>
+    <button class="sq" id="th" type="button" aria-label="Aktifkan mode terang" aria-pressed="false">
+      <span class="thi"><svg class="ico th-sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="ico th-moon" aria-hidden="true"><use href="#i-moon"/></svg></span>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero w">
+    <div class="pill"><span class="dot" aria-hidden="true"></span><span>Reaction your message channel WhatsApp ready!</span></div>
+    <h1 id="h1" tabindex="-1">Reaction your messenge channel WhatsApp, and see how many reactions are sent to your channel WhatsApp.</h1>
+  </section>
+
+  <section class="w">
+    <form class="card" id="f" novalidate autocomplete="off">
+      <div class="lim" id="lim"><span>daily limit <b id="limN">0</b>/<span id="limM">5</span></span></div>
+
+      <label class="lb" for="url"><svg class="ico" aria-hidden="true"><use href="#i-wa"/></svg><span>WhatsApp Channel Link Target:</span></label>
+      <div class="field" id="fUrl">
+        <span class="lead" aria-hidden="true"><svg class="ico"><use href="#i-link"/></svg></span>
+        <input id="url" name="link" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="500" placeholder="https://whatsapp.com/channel/123xx/01" aria-describedby="eUrl">
+        <button class="ib" id="cp" type="button" data-s="idle" aria-label="Tempel dari clipboard">
+          <span class="mi"><svg data-st="idle" aria-hidden="true"><use href="#i-clip"/></svg><svg data-st="clr" aria-hidden="true"><use href="#i-x"/></svg></span>
+        </button>
+      </div>
+      <p class="msg" id="eUrl" aria-live="polite" hidden></p>
+
+      <div class="lbrow">
+        <label class="lb" for="em"><svg class="ico" aria-hidden="true"><use href="#i-smile"/></svg><span>Emoji Reaction (Manual Input)</span></label>
+        <span class="bdg">MAX 5</span>
+      </div>
+      <div class="field" id="fEm">
+        <span class="lead" aria-hidden="true"><svg class="ico"><use href="#i-kbd"/></svg></span>
+        <input id="em" name="emoji" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="CONTOH: ❤,👍,😹,🔥,😇" aria-describedby="eEm">
+      </div>
+      <p class="msg" id="eEm" aria-live="polite" hidden></p>
+
+      <div class="pvw" aria-label="Preview emoji">
+        <div class="pvh">PREVIEW</div>
+        <div class="pvb" id="pvb" aria-live="polite"><span class="pve" id="pve">Typing your emoji above</span></div>
+        <div class="pvf"><span id="pvc">0/5 EMOJI</span><span>Pisahkan Emoji Dengan koma (,)</span></div>
+      </div>
+
+      <button class="go" id="go" type="submit" data-s="idle" aria-live="polite">
+        <span class="mi big">
+          <svg data-st="idle" aria-hidden="true"><use href="#i-send"/></svg>
+          <svg data-st="busy" class="spin" aria-hidden="true"><use href="#i-spin"/></svg>
+          <svg data-st="ok" aria-hidden="true"><use href="#i-check"/></svg>
+          <svg data-st="err" aria-hidden="true"><use href="#i-x"/></svg>
+        </span>
+        <span class="lbs">
+          <span data-st="idle">Kirim sekarang</span>
+          <span data-st="busy">Sedang diproses</span>
+          <span data-st="ok">Sukses dikirim!</span>
+          <span data-st="err">GAGAL DIPROSES</span>
+        </span>
+      </button>
+      <p class="msg" id="eGo" role="status" aria-live="polite" hidden></p>
+    </form>
+  </section>
+
+  <div class="mq" aria-hidden="true">
+    <div class="mq-in">
+      <div class="mq-track">
+        <div class="mq-g"><span>SISTEM DIINTEGRASI AMAN • PROSES CEPAT DAN TERLINDUNGI • POWERED BY RAZEERH</span><span>SISTEM DIINTEGRASI AMAN • PROSES CEPAT DAN TERLINDUNGI • POWERED BY RAZEERH</span><span>SISTEM DIINTEGRASI AMAN • PROSES CEPAT DAN TERLINDUNGI • POWERED BY RAZEERH</span></div>
+        <div class="mq-g"><span>SISTEM DIINTEGRASI AMAN • PROSES CEPAT DAN TERLINDUNGI • POWERED BY RAZEERH</span><span>SISTEM DIINTEGRASI AMAN • PROSES CEPAT DAN TERLINDUNGI • POWERED BY RAZEERH</span><span>SISTEM DIINTEGRASI AMAN • PROSES CEPAT DAN TERLINDUNGI • POWERED BY RAZEERH</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="w">
+    <div class="ft-row"><span>© 2026 RazeerhDev. All rights reserved</span><span>razeeehdev.my.id</span></div>
+  </div>
+  <div class="giant" aria-hidden="true">RAZEERH</div>
+</footer>
+
+<script src="utils/validate.js" defer></script>
+<script src="utils/dailyLimit.js" defer></script>
+<script src="script.js" defer></script>
+</body>
+</html>
