@@ -170,7 +170,7 @@ html.lk{overflow:hidden}html:not(.lk) #ig{display:none}
 .igi p{color:var(--mute);font-size:14.5px;line-height:1.55;margin-bottom:10px}
 .igi p.sigl{color:var(--ink);margin:14px 0 0;line-height:1.1}
 .sig{display:block;margin-top:2px;font:400 38px/1.05 'Mrs Saint Delafield','Segoe Script','Brush Script MT',cursive;color:var(--ink)}
-.iga{display:flex;gap:10px;margin-top:18px}.iga .btn{flex:1}
+.iga{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:18px}.iga .btn{width:100%;min-width:0;padding:0 10px}
 .igc{display:flex;justify-content:center;margin-top:12px}.igc .btn{min-width:130px}
 
 /* modal donasi */
@@ -210,7 +210,7 @@ header,main>*,footer{transition:opacity .8s var(--ease),translate .8s var(--ease
 main>:nth-child(2){transition-delay:.08s}main>:nth-child(3){transition-delay:.16s}footer{transition-delay:.22s}
 html.hld header,html.hld main>*,html.hld footer{opacity:0;translate:0 18px}
 
-@media(max-width:380px){.iga{flex-direction:column}.card{padding:20px 16px 18px}.w{padding-left:16px;padding-right:16px}}
+@media(max-width:380px){.card{padding:20px 16px 18px}.w{padding-left:16px;padding-right:16px}}
 @media(prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important}
