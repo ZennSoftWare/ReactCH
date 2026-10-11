@@ -2,24 +2,30 @@
 
 /**
  * Adapter provider reaction (react.keyysspanel.web.id) + solver Turnstile (FGSI).
- * Dipakai oleh api/reactch.js lewat:  const { sendReact } = require('./rch')
  *
  * Kontrak:
- *   sendReact(link, emoji) -> Promise<{ state, delivered, raw?, error? }>
+ *   sendReact(link, emoji) -> Promise<{ state, delivered }>
  *     state     : 'success' | 'verification_required' | 'rejected' | 'unavailable' | 'timeout' | 'unexpected'
- *     delivered : true (terkirim) | false (dipastikan belum terkirim) | null (tidak dapat dipastikan)
+ *     delivered : true | false | null
+ *
+ * Strategi: direct -> generic proxy -> ScraperAPI -> ScrapingBee (cascade).
+ * Yang pertama mengembalikan JSON valid (bukan halaman Cloudflare) dipakai.
  *
  * Env:
- *   FGSI_KEY            -> API key FGSI utama      (mis. fgsiapi-c8e39dd-6d)
- *   FGSI_KEY_FALLBACK   -> API key FGSI cadangan   (mis. fgsiapi-3b641ef1-6d)
+ *   FGSI_KEY              (wajib)  API key FGSI utama
+ *   FGSI_KEY_FALLBACK     (opsi)   API key FGSI cadangan
+ *   PROXY_URL             (opsi)   http(s)://user:pass@host:port
+ *   SCRAPERAPI_KEY        (opsi)   https://scraperapi.com
+ *   SCRAPINGBEE_KEY       (opsi)   https://scrapingbee.com
  *
- * CLI (opsional, tetap didukung):
+ * CLI:
  *   node api/rch.js "https://whatsapp.com/channel/ID/MSG" "☺,🤗,🔥"
  */
 
 const axios = require('axios');
 
 const BASE = 'https://react.keyysspanel.web.id';
+const REACT_PATH = '/api/react';
 const DEFAULT_SITEKEY = '0x4AAAAAAErNYkwC4FusFhKz';
 const FGSI_ENDPOINT = 'https://fgsi.dpdns.org/api/tools/cfclearance/turnstile-min';
 const UA =
@@ -28,9 +34,14 @@ const UA =
 const TIMEOUT_SITEKEY = 20000;
 const TIMEOUT_TURNSTILE = 120000;
 const TIMEOUT_REACT = 60000;
+const TIMEOUT_VIA_SERVICE = 120000;
+
+const PROXY_URL = (process.env.PROXY_URL || '').trim();
+const SCRAPERAPI_KEY = (process.env.SCRAPERAPI_KEY || '').trim();
+const SCRAPINGBEE_KEY = (process.env.SCRAPINGBEE_KEY || '').trim();
 
 /* ------------------------------------------------------------------ */
-/* Helper                                                              */
+/* Helper dasar                                                        */
 /* ------------------------------------------------------------------ */
 
 function collectKeys() {
@@ -72,33 +83,124 @@ async function solveTurnstile(sitekey, apiKey) {
   if (!token) {
     const e = new Error('turnstile_failed');
     e.detail = JSON.stringify(d).slice(0, 300);
-    e.httpStatus = res.status;
     throw e;
   }
   return token;
 }
 
-async function postReact(link, emoji, cfToken) {
+function isCfChallenge(data) {
+  if (typeof data !== 'string') return false;
+  return /Just a moment|cf-browser-verification|cf_chl_opt|challenge-platform|cf-chl|cf_challenge/i.test(data);
+}
+
+/** true jika respons harus dicoba ulang lewat service lain. */
+function isRetryable(httpStatus, data) {
+  if (isCfChallenge(data)) return true;
+  if (typeof data === 'string' && (httpStatus === 403 || httpStatus === 503)) return true;
+  return false;
+}
+
+function parseProxyUrl(raw) {
+  const u = new URL(raw);
+  return {
+    protocol: u.protocol.replace(':', ''),
+    host: u.hostname,
+    port: parseInt(u.port || (u.protocol === 'https:' ? '443' : '80'), 10),
+    auth: u.username
+      ? { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) }
+      : undefined,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Strategi kirim reaction                                             */
+/* ------------------------------------------------------------------ */
+
+const REACT_BODY = (link, emoji, cfToken) => ({
+  link,
+  emoji,
+  'cf-turnstile-response': cfToken,
+});
+
+const REACT_HEADERS = {
+  'User-Agent': UA,
+  'Content-Type': 'application/json',
+  Origin: BASE,
+  Referer: BASE + '/',
+};
+
+/** 1) Direct dari IP serverless (bekerja di lokal, diblok CF di Vercel). */
+async function postDirect(link, emoji, cfToken) {
+  const res = await axios.post(BASE + REACT_PATH, REACT_BODY(link, emoji, cfToken), {
+    timeout: TIMEOUT_REACT,
+    headers: REACT_HEADERS,
+    validateStatus: () => true,
+  });
+  return { httpStatus: res.status, data: res.data };
+}
+
+/** 2) Lewat HTTP/HTTPS proxy generik. */
+async function postViaProxy(link, emoji, cfToken) {
+  const res = await axios.post(BASE + REACT_PATH, REACT_BODY(link, emoji, cfToken), {
+    timeout: TIMEOUT_REACT,
+    headers: REACT_HEADERS,
+    proxy: parseProxyUrl(PROXY_URL),
+    validateStatus: () => true,
+  });
+  return { httpStatus: res.status, data: res.data };
+}
+
+/** 3) Lewat ScraperAPI (render=true -> Chromium menjalankan JS challenge). */
+async function postViaScraperAPI(link, emoji, cfToken) {
   const res = await axios.post(
-    BASE + '/api/react',
-    { link, emoji, 'cf-turnstile-response': cfToken },
+    'https://api.scraperapi.com/',
+    REACT_BODY(link, emoji, cfToken),
     {
-      timeout: TIMEOUT_REACT,
-      headers: {
-        'User-Agent': UA,
-        'Content-Type': 'application/json',
-        Origin: BASE,
-        Referer: BASE + '/',
+      timeout: TIMEOUT_VIA_SERVICE,
+      params: {
+        api_key: SCRAPERAPI_KEY,
+        url: BASE + REACT_PATH,
+        method: 'POST',
+        render: 'true',
+        country_code: 'id',
       },
+      headers: { 'Content-Type': 'application/json' },
       validateStatus: () => true,
     }
   );
   return { httpStatus: res.status, data: res.data };
 }
 
-/** Normalisasi respons provider -> { state, delivered }. */
+/** 4) Lewat ScrapingBee (render_js=true). */
+async function postViaScrapingBee(link, emoji, cfToken) {
+  const res = await axios.post(
+    'https://app.scrapingbee.com/api/v1/',
+    REACT_BODY(link, emoji, cfToken),
+    {
+      timeout: TIMEOUT_VIA_SERVICE,
+      params: {
+        api_key: SCRAPINGBEE_KEY,
+        url: BASE + REACT_PATH,
+        method: 'POST',
+        render_js: 'true',
+        country_code: 'id',
+      },
+      headers: { 'Content-Type': 'application/json' },
+      validateStatus: () => true,
+    }
+  );
+  return { httpStatus: res.status, data: res.data };
+}
+
+/* ------------------------------------------------------------------ */
+/* Klasifikasi respons                                                 */
+/* ------------------------------------------------------------------ */
+
 function classify(data, httpStatus) {
-  const p = data || {};
+  if (isCfChallenge(data)) {
+    return { state: 'verification_required', delivered: false };
+  }
+  const p = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
   const msg = typeof p.message === 'string' ? p.message : '';
   const code = typeof p.code === 'string' ? p.code : '';
 
@@ -134,19 +236,13 @@ async function sendReact(link, emoji) {
     };
   }
 
-  // 1) Ambil sitekey terbaru (fallback ke default jika endpoint gagal)
   const sitekey = await getSitekey();
 
-  // 2) Coba solve Turnstile dengan key utama, lalu fallback
   let cfToken = null;
   let lastErr = null;
   for (const key of keys) {
-    try {
-      cfToken = await solveTurnstile(sitekey, key);
-      break;
-    } catch (e) {
-      lastErr = e;
-    }
+    try { cfToken = await solveTurnstile(sitekey, key); break; }
+    catch (e) { lastErr = e; }
   }
   if (!cfToken) {
     return {
@@ -156,29 +252,42 @@ async function sendReact(link, emoji) {
     };
   }
 
-  // 3) Kirim reaction
-  let out;
-  try {
-    out = await postReact(link, emoji, cfToken);
-  } catch (e) {
-    if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
-      return { state: 'timeout', delivered: null };
+  // Susun urutan strategi berdasarkan env yang tersedia.
+  const attempts = [{ name: 'direct', fn: () => postDirect(link, emoji, cfToken) }];
+  if (PROXY_URL) attempts.push({ name: 'proxy', fn: () => postViaProxy(link, emoji, cfToken) });
+  if (SCRAPERAPI_KEY) attempts.push({ name: 'scraperapi', fn: () => postViaScraperAPI(link, emoji, cfToken) });
+  if (SCRAPINGBEE_KEY) attempts.push({ name: 'scrapingbee', fn: () => postViaScrapingBee(link, emoji, cfToken) });
+
+  let lastOut = null;
+
+  for (const at of attempts) {
+    try {
+      const out = await at.fn();
+      const cf = isCfChallenge(out.data);
+      console.log('[rch] try', at.name, '->', out.httpStatus, cf ? '(CF_CHALLENGE)' : '');
+      if (!isRetryable(out.httpStatus, out.data)) {
+        return classify(out.data, out.httpStatus);
+      }
+      lastOut = out;
+    } catch (e) {
+      console.log('[rch] try', at.name, '-> ERROR', e.code || e.message);
+      if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
+        lastOut = { httpStatus: 0, data: null, timeout: true };
+      } else {
+        lastOut = { httpStatus: 0, data: null, error: e.message };
+      }
     }
-    return { state: 'unavailable', delivered: null };
   }
 
-  // === DIAGNOSTIK SEMENTARA — hapus setelah masalah ketemu ===
-  console.log('[rch] provider HTTP:', out.httpStatus);
-  console.log('[rch] provider body:', JSON.stringify(out.data).slice(0, 500));
-  // ===========================================================
-
-  return classify(out.data, out.httpStatus);
+  if (lastOut && lastOut.timeout) return { state: 'timeout', delivered: null };
+  if (!lastOut) return { state: 'unavailable', delivered: null };
+  return classify(lastOut.data, lastOut.httpStatus);
 }
 
 module.exports = { sendReact };
 
 /* ------------------------------------------------------------------ */
-/* CLI opsional (agar pemakaian lama tidak hilang)                     */
+/* CLI opsional                                                        */
 /* ------------------------------------------------------------------ */
 
 if (require.main === module) {
