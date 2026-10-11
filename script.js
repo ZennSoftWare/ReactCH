@@ -315,6 +315,9 @@
     els.igb.style.setProperty('--oh', h + 'px');
   }
   function openWelcome() {
+    // Link di index.html (data-channel-url) diutamakan; jika kosong/tidak valid, pakai WHATSAPP_CHANNEL_URL dari server.
+    var fromHtml = V.validateChannelProfileUrl(els.visit.getAttribute('data-channel-url') || '');
+    if (fromHtml.ok) state.config.channelUrl = fromHtml.url;
     if (state.config.channelUrl) {
       els.visit.setAttribute('href', state.config.channelUrl);
       els.visit.setAttribute('aria-disabled', 'false');
