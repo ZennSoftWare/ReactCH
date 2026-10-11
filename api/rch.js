@@ -1,80 +1,206 @@
 'use strict';
 
 /**
- * Adapter provider reaction (bagian "kirim react" dari reactch.js lama).
- * Bukan endpoint publik: export default hanya mengembalikan 404 agar Vercel tidak mengekspos helper ini.
+ * Adapter provider reaction (react.keyysspanel.web.id) + solver Turnstile (FGSI).
+ * Dipakai oleh api/reactch.js lewat:  const { sendReact } = require('./rch')
  *
- * Yang SENGAJA tidak dibawa dari reactch.js lama:
- *  - solveTurnstile() / getSitekey(): memakai layanan pihak ketiga untuk menyelesaikan Cloudflare
- *    Turnstile milik provider. Itu mengakali proteksi provider, jadi tidak diimplementasikan.
- *  - Header Origin/Referer yang menyamar sebagai situs provider dan User-Agent browser palsu.
- *  - API key bawaan yang tertulis di kode.
+ * Kontrak:
+ *   sendReact(link, emoji) -> Promise<{ state, delivered, raw?, error? }>
+ *     state     : 'success' | 'verification_required' | 'rejected' | 'unavailable' | 'timeout' | 'unexpected'
+ *     delivered : true (terkirim) | false (dipastikan belum terkirim) | null (tidak dapat dipastikan)
+ *
+ * Env:
+ *   FGSI_KEY            -> API key FGSI utama      (mis. fgsiapi-c8e39dd-6d)
+ *   FGSI_KEY_FALLBACK   -> API key FGSI cadangan   (mis. fgsiapi-3b641ef1-6d)
+ *
+ * CLI (opsional, tetap didukung):
+ *   node api/rch.js "https://whatsapp.com/channel/ID/MSG" "☺,🤗,🔥"
  */
+
 const axios = require('axios');
 
 const BASE = 'https://react.keyysspanel.web.id';
-const TIMEOUT_MS = 25000;
-const UA = 'xzeerh-reactchannel/1.0';
-const VERIFICATION_RE = /turnstile|captcha|verifikasi|verification|verify/i;
+const DEFAULT_SITEKEY = '0x4AAAAAAErNYkwC4FusFhKz';
+const FGSI_ENDPOINT = 'https://fgsi.dpdns.org/api/tools/cfclearance/turnstile-min';
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
-/**
- * Hasil ternormalisasi, tanpa data mentah provider:
- *  state: 'success' | 'verification_required' | 'rejected' | 'unavailable' | 'timeout' | 'unexpected'
- *  delivered: true | false | null   (null = hasil tidak dapat dipastikan)
- */
-function normalizeProviderResponse(status, data) {
-  const is2xx = status >= 200 && status < 300;
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { state: status >= 500 ? 'unavailable' : 'unexpected', delivered: null };
+const TIMEOUT_SITEKEY = 20000;
+const TIMEOUT_TURNSTILE = 120000;
+const TIMEOUT_REACT = 60000;
+
+/* ------------------------------------------------------------------ */
+/* Helper                                                              */
+/* ------------------------------------------------------------------ */
+
+function collectKeys() {
+  const keys = [];
+  const a = (process.env.FGSI_KEY || '').trim();
+  const b = (process.env.FGSI_KEY_FALLBACK || '').trim();
+  if (a) keys.push(a);
+  if (b) keys.push(b);
+  return keys;
+}
+
+async function getSitekey() {
+  try {
+    const res = await axios.get(BASE + '/api/turnstile/status', {
+      timeout: TIMEOUT_SITEKEY,
+      headers: { 'User-Agent': UA },
+      validateStatus: () => true,
+    });
+    const k = res.data && (res.data.siteKey || res.data.sitekey);
+    return typeof k === 'string' && k ? k : DEFAULT_SITEKEY;
+  } catch (_) {
+    return DEFAULT_SITEKEY;
   }
-  if (is2xx && data.success === true) return { state: 'success', delivered: true };
+}
 
-  const text = [data.message, data.error, data.msg]
-    .filter((v) => typeof v === 'string')
-    .join(' ');
-  if (VERIFICATION_RE.test(text)) return { state: 'verification_required', delivered: false };
+async function solveTurnstile(sitekey, apiKey) {
+  const res = await axios.get(FGSI_ENDPOINT, {
+    timeout: TIMEOUT_TURNSTILE,
+    params: { apikey: apiKey, url: BASE + '/', sitekey },
+    headers: { accept: 'application/json' },
+    validateStatus: () => true,
+  });
+  const d = res.data || {};
+  const token =
+    (d.data && (d.data.token || d.data.cf_turnstile_response)) ||
+    d.token ||
+    d.cf_turnstile_response ||
+    null;
+  if (!token) {
+    const e = new Error('turnstile_failed');
+    e.detail = JSON.stringify(d).slice(0, 300);
+    e.httpStatus = res.status;
+    throw e;
+  }
+  return token;
+}
 
-  if (data.success === false || data.status === false) return { state: 'rejected', delivered: false };
-  if (status >= 500) return { state: 'unavailable', delivered: null };
+async function postReact(link, emoji, cfToken) {
+  const res = await axios.post(
+    BASE + '/api/react',
+    { link, emoji, 'cf-turnstile-response': cfToken },
+    {
+      timeout: TIMEOUT_REACT,
+      headers: {
+        'User-Agent': UA,
+        'Content-Type': 'application/json',
+        Origin: BASE,
+        Referer: BASE + '/',
+      },
+      validateStatus: () => true,
+    }
+  );
+  return { httpStatus: res.status, data: res.data };
+}
+
+/** Normalisasi respons provider -> { state, delivered }. */
+function classify(data, httpStatus) {
+  const p = data || {};
+  const msg = typeof p.message === 'string' ? p.message : '';
+  const code = typeof p.code === 'string' ? p.code : '';
+
+  // Deteksi "butuh verifikasi / turnstile / captcha"
+  const needsVerify =
+    /verification|verifikasi|turnstile|captcha|challenge|verif/i.test(msg) ||
+    /VERIFICATION|TURNSTILE|CAPTCHA/i.test(code);
+
+  // Deteksi sukses (toleran terhadap beberapa bentuk respons provider)
+  const ok =
+    p.success === true ||
+    p.status === true ||
+    p.ok === true ||
+    p.status === 'success' ||
+    p.status === 'ok' ||
+    (msg && /success|berhasil|sukses/i.test(msg) && p.success !== false && p.ok !== false);
+
+  if (needsVerify) return { state: 'verification_required', delivered: false };
+  if (ok) return { state: 'success', delivered: true };
+  if (httpStatus >= 400 && httpStatus < 500) return { state: 'rejected', delivered: false };
   return { state: 'unexpected', delivered: null };
 }
 
-function normalizeNetworkError(err) {
-  const code = err && err.code;
-  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') return { state: 'timeout', delivered: null };
-  // Gagal sebelum request sampai ke provider: dipastikan belum terkirim.
-  if (code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') {
-    return { state: 'unavailable', delivered: false };
-  }
-  return { state: 'unavailable', delivered: null };
-}
+/* ------------------------------------------------------------------ */
+/* API utama                                                           */
+/* ------------------------------------------------------------------ */
 
 async function sendReact(link, emoji) {
-  try {
-    const res = await axios.post(
-      BASE + '/api/react',
-      { link, emoji },
-      {
-        timeout: TIMEOUT_MS,
-        maxRedirects: 0,
-        maxContentLength: 100000,
-        headers: { 'User-Agent': UA, 'Content-Type': 'application/json', Accept: 'application/json' },
-        validateStatus: () => true
-      }
-    );
-    return normalizeProviderResponse(res.status, res.data);
-  } catch (err) {
-    return normalizeNetworkError(err);
+  const keys = collectKeys();
+  if (!keys.length) {
+    return {
+      state: 'verification_required',
+      delivered: false,
+      error: 'FGSI_KEY / FGSI_KEY_FALLBACK belum diset di environment.',
+    };
   }
+
+  // 1) Ambil sitekey terbaru (fallback ke default jika endpoint gagal)
+  const sitekey = await getSitekey();
+
+  // 2) Coba solve Turnstile dengan key utama, lalu fallback
+  let cfToken = null;
+  let lastErr = null;
+  for (const key of keys) {
+    try {
+      cfToken = await solveTurnstile(sitekey, key);
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!cfToken) {
+    // Solver tidak bisa memberi token => Turnstile belum terpenuhi => belum terkirim.
+    return {
+      state: 'verification_required',
+      delivered: false,
+      error: lastErr ? lastErr.message : 'turnstile_failed',
+    };
+  }
+
+  // 3) Kirim reaction
+  let out;
+  try {
+    out = await postReact(link, emoji, cfToken);
+  } catch (e) {
+    if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
+      return { state: 'timeout', delivered: null };
+    }
+    return { state: 'unavailable', delivered: null };
+  }
+
+  return classify(out.data, out.httpStatus);
 }
 
-function notFound(req, res) {
-  res.statusCode = 404;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.end('{"ok":false,"message":"Not found"}');
-}
+module.exports = { sendReact };
 
-module.exports = notFound;
-module.exports.sendReact = sendReact;
-module.exports.normalizeProviderResponse = normalizeProviderResponse;
-module.exports.normalizeNetworkError = normalizeNetworkError;
+/* ------------------------------------------------------------------ */
+/* CLI opsional (agar pemakaian lama tidak hilang)                     */
+/* ------------------------------------------------------------------ */
+
+if (require.main === module) {
+  (async () => {
+    const link = process.argv[2];
+    const emoji = process.argv[3] || '❤️';
+    if (!link) {
+      console.log('node api/rch.js "https://whatsapp.com/channel/ID/MSG" "☺,🤗"');
+      process.exit(1);
+    }
+    if (!/whatsapp\.com\/channel\/[^/]+\/\d+/.test(link)) {
+      console.log(JSON.stringify({
+        status: false,
+        message: 'Link harus .../channel/CHANNEL_ID/MESSAGE_ID (ada nomor di belakang).',
+      }));
+      process.exit(1);
+    }
+    try {
+      const out = await sendReact(link, emoji);
+      console.log(JSON.stringify(out, null, 2));
+      process.exit(out.state === 'success' ? 0 : 1);
+    } catch (e) {
+      console.log(JSON.stringify({ status: false, message: e.message }, null, 2));
+      process.exit(1);
+    }
+  })();
+}
