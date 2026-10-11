@@ -102,12 +102,10 @@ function classify(data, httpStatus) {
   const msg = typeof p.message === 'string' ? p.message : '';
   const code = typeof p.code === 'string' ? p.code : '';
 
-  // Deteksi "butuh verifikasi / turnstile / captcha"
   const needsVerify =
     /verification|verifikasi|turnstile|captcha|challenge|verif/i.test(msg) ||
     /VERIFICATION|TURNSTILE|CAPTCHA/i.test(code);
 
-  // Deteksi sukses (toleran terhadap beberapa bentuk respons provider)
   const ok =
     p.success === true ||
     p.status === true ||
@@ -151,7 +149,6 @@ async function sendReact(link, emoji) {
     }
   }
   if (!cfToken) {
-    // Solver tidak bisa memberi token => Turnstile belum terpenuhi => belum terkirim.
     return {
       state: 'verification_required',
       delivered: false,
@@ -169,6 +166,11 @@ async function sendReact(link, emoji) {
     }
     return { state: 'unavailable', delivered: null };
   }
+
+  // === DIAGNOSTIK SEMENTARA — hapus setelah masalah ketemu ===
+  console.log('[rch] provider HTTP:', out.httpStatus);
+  console.log('[rch] provider body:', JSON.stringify(out.data).slice(0, 500));
+  // ===========================================================
 
   return classify(out.data, out.httpStatus);
 }
