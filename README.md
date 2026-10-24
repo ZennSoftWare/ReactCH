@@ -4,14 +4,15 @@ Website untuk mengirim emoji reaction ke pesan WhatsApp Channel. Frontend statis
 
 ## Status integrasi provider (baca dulu)
 
-Backend memanggil `POST https://react.keyysspanel.web.id/api/react` (diambil dari `reactch.js` lama).
-Script CLI lama menyelesaikan Cloudflare Turnstile milik provider memakai layanan solver pihak ketiga. Bagian itu
-**sengaja tidak diimplementasikan** karena mengakali proteksi provider.
+Backend memanggil panel reaction `https://react.nexapanel.my.id` melalui mesin **versi scrape** di `lib/panel.js` + `lib/proxyPool.js` (pengganti adapter lama keyysspanel + solver FGSI di `api/rch.js`; handler web `api/reactch.js` dan frontend tidak berubah).
 
-Akibatnya, jika provider mewajibkan token Turnstile, API mengembalikan `PROVIDER_VERIFICATION_REQUIRED` dan UI
-menampilkan "GAGAL DIPROSES" dengan penjelasan. Website tidak pernah menampilkan sukses palsu: sukses hanya jika
-provider menjawab `success: true`. Agar pengiriman benar-benar berjalan, butuh cara verifikasi yang resmi dari provider
-(mis. API key atau izin lewat mekanisme yang mereka sediakan). Tambahkan di `api/rch.js`, fungsi `sendReact`.
+Strategi mesin:
+1. **HTTP cascade** — axios + cheerio lewat pool rotasi IP (100 slot; proxy mati/limit otomatis diganti proxy baru). Cookie `cf_clearance` dipertahankan per IP proxy.
+2. **Browser stealth** — bila Cloudflare menghalangi, playwright-core menjalankan challenge hingga lolos, lalu reaksi dieksekusi **di dalam halaman panel** (form + tombol, cadangan fetch sisi halaman) sehingga cookie sesi & widget provider tetap valid.
+
+Sukses hanya diumumkan bila panel/provider benar-benar menerima reaction: UI tidak pernah menampilkan sukses palsu. Bila challenge tidak terselesaikan, API mengembalikan `PROVIDER_VERIFICATION_REQUIRED` (503) seperti semula.
+
+Anggaran waktu default: `REACT_TOTAL_BUDGET_MS` 55s di Vercel / 90s lokal; komponen lain via env pada `.env.example`. Untuk keandalan di Vercel (IP serverless, sering diblok Cloudflare), isi `PROXY_LIST` dengan proxy bersih (residential/paid).
 
 ## Instalasi dan menjalankan
 
@@ -33,8 +34,10 @@ Isi di Vercel > Settings > Environment Variables (lokal: `.env.local`). Contoh a
 | `SESSION_SECRET` | Rahasia acak untuk menandatangani cookie sesi di `middleware.js`. Tanpa ini tanda tangan tidak diverifikasi. |
 | `ALLOWED_ORIGINS` | Opsional. Origin tambahan yang boleh memanggil API (pisahkan koma). |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_SEC` | Opsional. Rate limit server per IP (default 10 permintaan / 600 detik). |
+| `PROXY_LIST`, `PROXY_SOURCE_URL`, `PROXY_SLOTS`, `PROXY_MAX_USES`, `SCRAPER_FREE_PROXIES` | Opsional. Pool rotasi IP provider (lihat `.env.example`). Tanpa proxy bersih, Cloudflare provider sering meminta verifikasi. |
+| `REACT_PROVIDER_MODE`, `REACT_*_*` | Opsional. Tuning mesin provider (mode, percobaan, anggaran waktu). |
 
-Tidak ada API key di frontend. Jangan commit `.env`. `FGSI_KEY_*` tidak dipakai karena hanya melayani solver Turnstile di atas.
+Tidak ada API key di frontend. Jangan commit `.env`. Solver pihak ketiga lama (`FGSI_KEY_*`, ScraperAPI, ScrapingBee) sudah tidak dipakai; gantinya browser stealth + rotasi proxy internal.
 
 ## QRIS donasi
 
@@ -56,8 +59,10 @@ placeholder "QRIS belum tersedia". Saat berkas belum ada, browser mencatat 404 d
 
 ```
 index.html  style.css  script.js  middleware.js  vercel.json  package.json
-api/reactch.js     handler web: GET konfigurasi publik, POST kirim reaction
-api/rch.js         adapter provider (bukan endpoint publik)
+api/reactch.js     handler web: GET konfigurasi publik, POST kirim reaction (tidak berubah)
+api/rch.js         adapter provider versi scrape (kontrak sendReact lama, isi baru)
+lib/panel.js       mesin reaction: cascade http + browser stealth (Cloudflare)
+lib/proxyPool.js   pool rotasi IP (100 slot, proxy mati -> replace otomatis)
 utils/validate.js  validasi URL & emoji, dipakai frontend dan backend
 utils/dailyLimit.js  limit harian lokal (browser)
 utils/rateLimiter.js rate limit backend
