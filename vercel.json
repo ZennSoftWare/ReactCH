@@ -2,7 +2,6 @@
   "functions": {
     "api/reactch.js": {
       "maxDuration": 60,
-      "memory": 1769,
       "includeFiles": "lib/**"
     }
   },
