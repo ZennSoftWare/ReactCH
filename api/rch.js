@@ -1,31 +1,27 @@
 'use strict';
 
 /**
- * Adapter provider reaction — VERSI SCRAPE (react.nexapanel.my.id).
+ * Adapter provider reaction — VERSI SCRAPE (www.leovan.my.id).
  *
- * Pengganti adapter lama (react.keyysspanel.web.id + solver FGSI) memakai mesin
- * lib/panel.js + lib/proxyPool.js:
- *   - Axios + cheerio melalui pool rotasi proxy (cf_clearance dipertahankan per IP proxy).
- *   - Browser stealth untuk menyelesaikan Cloudflare, lalu reaction dieksekusi di dalam
- *     halaman panel sehingga cookie sesi & widget provider tetap valid.
- *   - 1 proxy mati/limit => otomatis diganti proxy baru (praktis unlimited: pool 100x).
+ * Memakai mesin lib/leovan.js:
+ *   - GET / untuk cookie sesi (di-cache), lalu POST /api/react dengan nama pengirim acak otomatis.
+ *   - Sesi dibuat ulang otomatis bila ditolak (401/403/419/challenge); tidak pernah mengirim ulang
+ *     saat hasil tidak pasti (timeout/error jaringan).
  *
  * Kontrak tidak berubah — dipakai api/reactch.js tanpa penyesuaian:
  *   sendReact(link, emoji) -> Promise<{ state, delivered }>
  *     state     : 'success' | 'verification_required' | 'rejected' | 'unavailable' | 'timeout' | 'unexpected'
  *     delivered : true | false | null
  *
- * Env utama (opsional):
- *   PROXY_LIST, PROXY_SOURCE_URL, PROXY_SLOTS, PROXY_MAX_USES, SCRAPER_FREE_PROXIES
- *   REACT_PROVIDER_BASE   (default https://react.nexapanel.my.id)
- *   REACT_PROVIDER_MODE   (auto | http-only | browser-only)
- *   REACT_HTTP_ATTEMPTS, REACT_BROWSER_ATTEMPTS, REACT_SOLVE_WAIT_MS, REACT_RESULT_WAIT_MS
+ * Env (opsional):
+ *   LEOVAN_BASE_URL        (default https://www.leovan.my.id)
+ *   REACT_TOTAL_BUDGET_MS  (anggaran waktu total, default 35000)
  *
  * CLI:
  *   node api/rch.js "https://whatsapp.com/channel/ID/MSG" "😀,🔥"
  */
 
-const { sendReact } = require('../lib/panel');
+const { sendReact } = require('../lib/leovan');
 
 module.exports = { sendReact };
 
